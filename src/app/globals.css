@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light theme color overrides */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%; /* improved contrast for foreground */
+
+  /* brand: amber */
+  --primary: 38 92% 50%;      /* amber-500-ish */
+  --primary-foreground: 48 100% 98%;
+
+  /* neutrals */
+  --muted: 60 5% 96%;
+  --muted-foreground: 25 10% 30%; /* darker muted foreground for better contrast */
+  --border: 24 6% 90%;
+  --card: 0 0% 100%;
+  --card-foreground: 20 14% 4%;
+
+  /* ring for focus */
+  --ring: 38 92% 50%;
+}
+
+/* Dark theme color overrides */
+.dark {
+  --background: 0 0% 4%;
+  --foreground: 210 20% 85%; /* lighter foreground for dark mode */
+  --primary: 38 92% 56%;
+  --primary-foreground: 0 0% 8%;
+  --muted: 0 0% 20%; /* lighter muted background in dark mode */
+  --muted-foreground: 0 0% 85%; /* lighter muted foreground */
+  --border: 0 0% 16%;
+  --card: 0 0% 6%;
+  --card-foreground: 0 0% 98%;
+}
+
+/* グローバルタイポ */
+body {
+  font-family: var(--font-inter), var(--font-noto), system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP",
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* “カードっぽさ”のユーティリティ */
+.card {
+  @apply rounded-2xl border border-[hsl(var(--border))]
+    bg-[hsl(var(--card))]/85 backdrop-blur-md shadow-sm;
+}
+
+/* セグメント風タブ(ナビ用) */
+.seg {
+  @apply inline-flex items-center gap-2 rounded-full px-4 py-2 border transition;
+}
+.seg[data-active="true"] {
+  @apply bg-[hsl(var(--primary))] border-transparent shadow;
+  color: hsl(var(--primary-foreground));
+}
+.seg[data-active="false"] {
+  @apply bg-transparent border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))];
+  color: hsl(var(--foreground));
+}
+
+/* links: デフォルトの紫/下線を封じて、常に本文色で */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+a:visited {
+  color: inherit;
+}
+/* consistent and readable underline on hover */
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

@@ -1,0 +1,24 @@
+# Node.jsで自動生成されるライブラリ群
+node_modules/
+
+# Next.jsがビルド時に作るフォルダ
+.next/
+out/
+dist/
+
+# 環境変数（秘密キーなど）
+.env
+.env.local
+.env.*.local
+
+# macOSやログなど不要なもの
+.DS_Store
+*.log
+
+# キャッシュ類
+.cache/
+coverage/
+
+# FirebaseやPWAの一時ファイル
+sw.js
+workbox-*.js
