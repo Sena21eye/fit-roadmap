@@ -1,3 +1,4 @@
+"use client";
 import React, { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -7,6 +8,7 @@ import {
   Clock, MapPin, Timer, Eye, Shirt, MessageCircle, Battery,
   Trophy, Gift, PartyPopper
 } from 'lucide-react';
+import { useRouter } from "next/navigation";
 
 interface OnboardingProps {
   onComplete: (data: any) => void;
@@ -27,6 +29,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     height: '',
     weight: ''
   });
+  const router = useRouter();
 
   const updateFormData = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -42,16 +45,18 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   };
 
   const handleNext = () => {
-    if (step < 9) {
-      setStep(step + 1);
-    } else if (step === 9) {
-      // すべての質問が完了 → 完了画面へ遷移しつつデータを返す
-      setStep(10);
-      onComplete(formData);
-    } else {
-      onComplete(formData);
-    }
-  };
+  if (step < 9) {
+    setStep(step + 1);
+  } else if (step === 9) {
+    // すべての質問が完了 → 完了画面へ
+    setStep(10);
+    onComplete(formData);
+  } else {
+    // ★ ここを追加
+    localStorage.setItem("onboarding_done", "true");
+    router.replace("/today");
+  }
+};
 
   const canProceed = () => {
     switch (step) {
