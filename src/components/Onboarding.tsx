@@ -9,6 +9,8 @@ import {
   Trophy, Gift, PartyPopper
 } from 'lucide-react';
 import { useRouter } from "next/navigation";
+import { anonymousLogin } from "@/lib/auth";
+import { saveProfile } from "@/lib/firestore";
 
 interface OnboardingProps {
   onComplete: (data: any) => void;
@@ -29,6 +31,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     height: '',
     weight: ''
   });
+  const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
   const updateFormData = (field: string, value: any) => {
@@ -44,19 +47,23 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     }));
   };
 
-  const handleNext = () => {
-  if (step < 9) {
-    setStep(step + 1);
-  } else if (step === 9) {
-    // すべての質問が完了 → 完了画面へ
-    setStep(10);
-    onComplete(formData);
-  } else {
-    // ★ ここを追加
-    localStorage.setItem("onboarding_done", "true");
-    router.replace("/today");
-  }
-};
+  const handleNext = async () => {
+    if (step < 9) return setStep(step + 1);
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const user = await anonymousLogin();
+      await saveProfile(user.uid, formData);
+      localStorage.setItem("onboarding_done", "true");
+      document.cookie = "onboarding_done=1; Max-Age=31536000; Path=/; SameSite=Lax";
+      router.replace("/today");
+    } catch (e) {
+      console.error(e);
+      alert("データ保存中にエラーが発生しました。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const canProceed = () => {
     switch (step) {
@@ -603,10 +610,16 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       <div className="mt-8 max-w-md mx-auto w-full">
         <Button
           onClick={handleNext}
-          disabled={!canProceed()}
+          disabled={!canProceed() || submitting}
           className="w-full bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white h-14 rounded-2xl text-lg shadow-lg transform transition-all duration-200 hover:scale-105 disabled:scale-100 disabled:opacity-50"
         >
-          {step === 0 ? 'はじめる' : step === 9 ? 'トレーニングを始める' : '次へ'}
+          {submitting
+            ? "保存中..."
+            : step === 9
+            ? "トレーニングを始める"
+            : step === 0
+            ? "はじめる"
+            : "次へ"}
           <ChevronRight className="ml-2 w-5 h-5" />
         </Button>
       </div>
