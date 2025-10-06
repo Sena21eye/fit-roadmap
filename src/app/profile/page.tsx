@@ -7,7 +7,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 
-// menu.ts の型に合わせた候補
+import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+
+// 型（UIの選択肢と揃える）
 type Experience = "初心者" | "ときどき" | "経験者";
 type Goal = "slim" | "tone" | "muscle" | "healthy";
 type Barrier = "running" | "heavy" | "gym" | "long";
@@ -16,6 +20,9 @@ type Duration = "10" | "20-30" | "45+";
 type Day = "月" | "火" | "水" | "木" | "金" | "土" | "日";
 
 export default function ProfilePage() {
+  const [uid, setUid] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [showToast, setShowToast] = useState(false);
 
   const [profileData, setProfileData] = useState<{
@@ -36,32 +43,61 @@ export default function ProfilePage() {
     schedule: [],
   });
 
-  // 初期ロード：既存キー（onboarding_form / bodyWeight）から復元
+  // ===== 初期ロード：匿名ログイン → Firestore から読込 =====
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("onboarding_form");
-      const form = raw ? JSON.parse(raw) : {};
-      const bw =
-        profileData.weight ||
-        String(
-          (form.bodyWeight ?? (localStorage.getItem("bodyWeight") ?? ""))
-        );
+    const stop = onAuthStateChanged(auth, async (user) => {
+      try {
+        // 未ログインなら匿名でログイン
+        if (!user) {
+          const cred = await signInAnonymously(auth);
+          user = cred.user;
+        }
+        setUid(user.uid);
 
-      setProfileData({
-        weight: bw,
-        experience: (form.experience ?? "") as Experience | "",
-        goal: (form.goal ?? "") as Goal | "",
-        barriers: (Array.isArray(form.barriers) ? form.barriers : []) as Barrier[],
-        targetAreas: (Array.isArray(form.targetAreas) ? form.targetAreas : []) as Area[],
-        duration: (form.duration ?? "") as Duration | "",
-        schedule: (Array.isArray(form.schedule) ? form.schedule : []) as Day[],
-      });
-    } catch {
-      // noop
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // Firestore からプロフィール読込
+        const ref = doc(db, "users", user.uid);
+        const snap = await getDoc(ref);
+
+        if (snap.exists()) {
+          const data = snap.data() || {};
+          setProfileData((prev) => ({
+            weight: String(data.weight ?? prev.weight ?? ""),
+            experience: (data.experience ?? "") as Experience | "",
+            goal: (data.goal ?? "") as Goal | "",
+            barriers: Array.isArray(data.barriers) ? (data.barriers as Barrier[]) : [],
+            targetAreas: Array.isArray(data.targetAreas) ? (data.targetAreas as Area[]) : [],
+            duration: (data.duration ?? "") as Duration | "",
+            schedule: Array.isArray(data.schedule) ? (data.schedule as Day[]) : [],
+          }));
+        } else {
+          // 既存ユーザーで Firestore が空なら、localStorage から暫定復元（あれば）
+          try {
+            const raw = localStorage.getItem("onboarding_form");
+            const form = raw ? JSON.parse(raw) : {};
+            setProfileData((prev) => ({
+              weight: String(localStorage.getItem("bodyWeight") ?? prev.weight ?? ""),
+              experience: (form.experience ?? "") as Experience | "",
+              goal: (form.goal ?? "") as Goal | "",
+              barriers: Array.isArray(form.barriers) ? (form.barriers as Barrier[]) : [],
+              targetAreas: Array.isArray(form.targetAreas) ? (form.targetAreas as Area[]) : [],
+              duration: (form.duration ?? "") as Duration | "",
+              schedule: Array.isArray(form.schedule) ? (form.schedule as Day[]) : [],
+            }));
+          } catch {
+            /* noop */
+          }
+        }
+      } catch (e) {
+        console.error("プロフィール読込に失敗:", e);
+      } finally {
+        setInitialLoading(false);
+      }
+    });
+
+    return () => stop();
   }, []);
 
+  // ===== ユーティリティ =====
   const updateField = (field: keyof typeof profileData, value: any) => {
     setProfileData((prev) => ({ ...prev, [field]: value }));
   };
@@ -71,14 +107,17 @@ export default function ProfilePage() {
     item: T
   ) => {
     setProfileData((prev) => {
-      const arr = new Set(prev[field]);
-      arr.has(item) ? arr.delete(item) : arr.add(item);
-      return { ...prev, [field]: Array.from(arr) as any };
+      const set = new Set(prev[field]);
+      set.has(item) ? set.delete(item) : set.add(item);
+      return { ...prev, [field]: Array.from(set) as any };
     });
   };
 
-  const handleSave = () => {
-    // validation（最低限）
+  // ===== 保存（Firestore へ書き込み & 互換のため localStorage も更新）=====
+  const handleSave = async () => {
+    if (!uid) return;
+
+    // かんたんバリデーション
     const w = Number(profileData.weight);
     if (!w || w <= 0) {
       alert("体重(kg)を入力してください");
@@ -93,50 +132,79 @@ export default function ProfilePage() {
       return;
     }
 
-    // today/menu.ts が読むキーに保存
-    const { weight, ...rest } = profileData;
-    const onboarding_form = {
-      experience: rest.experience,
-      goal: rest.goal,
-      barriers: rest.barriers,
-      targetAreas: rest.targetAreas,
-      duration: rest.duration,
-      schedule: (profileData.schedule ?? []) as Day[],
-    };
+    setSubmitting(true);
+    try {
+      // Firestore へ保存（マージ）
+      const ref = doc(db, "users", uid);
+      await setDoc(
+        ref,
+        {
+          weight: profileData.weight,
+          experience: profileData.experience,
+          goal: profileData.goal,
+          barriers: profileData.barriers,
+          targetAreas: profileData.targetAreas,
+          duration: profileData.duration,
+          schedule: profileData.schedule,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-    localStorage.setItem("onboarding_form", JSON.stringify(onboarding_form));
-    const scheduleMap = Object.fromEntries(
-      ((profileData.schedule ?? []) as Day[]).map(d => [d, true])
-    );
-    localStorage.setItem("schedule_map", JSON.stringify(scheduleMap));
-    localStorage.setItem("bodyWeight", String(w));
+      // 既存ロジック互換：localStorage にも反映
+      localStorage.setItem("bodyWeight", String(w));
+      const onboarding_form = {
+        experience: profileData.experience,
+        goal: profileData.goal,
+        barriers: profileData.barriers,
+        targetAreas: profileData.targetAreas,
+        duration: profileData.duration,
+        schedule: profileData.schedule,
+      };
+      localStorage.setItem("onboarding_form", JSON.stringify(onboarding_form));
+      localStorage.setItem(
+        "schedule_map",
+        JSON.stringify(Object.fromEntries((profileData.schedule ?? []).map((d) => [d, true])))
+      );
 
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2200);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (e) {
+      console.error("プロフィール保存に失敗:", e);
+      alert("保存中にエラーが発生しました。しばらくしてから再度お試しください。");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  // ===== 画面 =====
+  if (initialLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-pink-700">
+        読み込み中…
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 to-orange-50 p-4">
       <div className="max-w-md mx-auto space-y-6">
-        {/* Header */}
+        {/* ヘッダー */}
         <div className="flex justify-between items-center mb-1">
-          <h1 className="text-2xl font-bold text-pink-800">Profile</h1>
+          <h1 className="text-2xl font-bold text-pink-800">プロフィール</h1>
         </div>
 
-        {/* Toast */}
+        {/* トースト */}
         {showToast && (
           <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl">
-            <p className="text-emerald-800 text-sm text-center">
-              プロフィールを保存しました！
-            </p>
+            <p className="text-emerald-800 text-sm text-center">プロフィールを保存しました！</p>
           </div>
         )}
 
-        {/* Card */}
+        {/* カード */}
         <Card className="bg-white border-pink-100 shadow-sm">
           <CardContent className="p-6 space-y-6">
-            {/* Weight */}
+            {/* 体重 */}
             <div className="space-y-2">
               <label className="text-pink-700 text-sm">体重(kg)</label>
               <Input
@@ -149,7 +217,7 @@ export default function ProfilePage() {
               <p className="text-pink-600 text-xs">※ 推奨重量の初期値に使います</p>
             </div>
 
-            {/* Experience */}
+            {/* 運動経験 */}
             <div className="space-y-2">
               <label className="text-pink-700 text-sm">運動経験</label>
               <div className="flex gap-2">
@@ -169,7 +237,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Goal */}
+            {/* 目標 */}
             <div className="space-y-2">
               <label className="text-pink-700 text-sm">目標</label>
               <div className="grid grid-cols-2 gap-2">
@@ -194,7 +262,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Barriers */}
+            {/* 避けたいこと */}
             <div className="space-y-2">
               <label className="text-pink-700 text-sm">避けたいこと（複数選択可）</label>
               <div className="space-y-2">
@@ -204,26 +272,19 @@ export default function ProfilePage() {
                   { id: "gym", label: "ジム行かない" },
                   { id: "long", label: "長時間は無理" },
                 ].map((b) => (
-                  <div
-                    key={b.id}
-                    className="flex items-center space-x-3 p-3 hover:bg-pink-25 rounded-lg"
-                  >
+                  <div key={b.id} className="flex items-center space-x-3 p-3 hover:bg-pink-25 rounded-lg">
                     <Checkbox
                       checked={profileData.barriers.includes(b.id as Barrier)}
-                      onCheckedChange={() =>
-                        toggleArrayItem("barriers", b.id as Barrier)
-                      }
+                      onCheckedChange={() => toggleArrayItem("barriers", b.id as Barrier)}
                       className="border-pink-300 data-[state=checked]:bg-pink-500"
                     />
-                    <label className="text-pink-800 text-sm cursor-pointer flex-1">
-                      {b.label}
-                    </label>
+                    <label className="text-pink-800 text-sm cursor-pointer flex-1">{b.label}</label>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Target Areas */}
+            {/* 気になる部位 */}
             <div className="space-y-2">
               <label className="text-pink-700 text-sm">気になる部位（複数選択可）</label>
               <div className="grid grid-cols-3 gap-2">
@@ -235,30 +296,23 @@ export default function ProfilePage() {
                   { id: "back", label: "背中" },
                   { id: "whole", label: "全身" },
                 ].map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center space-x-2 p-2 hover:bg-pink-25 rounded-lg"
-                  >
+                  <div key={a.id} className="flex items-center space-x-2 p-2 hover:bg-pink-25 rounded-lg">
                     <Checkbox
                       checked={profileData.targetAreas.includes(a.id as Area)}
-                      onCheckedChange={() =>
-                        toggleArrayItem("targetAreas", a.id as Area)
-                      }
+                      onCheckedChange={() => toggleArrayItem("targetAreas", a.id as Area)}
                       className="border-pink-300 data-[state=checked]:bg-pink-500"
                     />
-                    <label className="text-pink-800 text-xs cursor-pointer">
-                      {a.label}
-                    </label>
+                    <label className="text-pink-800 text-xs cursor-pointer">{a.label}</label>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Schedule (Weekdays) */}
+            {/* 運動する曜日 */}
             <div className="space-y-2">
               <label className="text-pink-700 text-sm">運動する曜日（複数選択可）</label>
               <div className="grid grid-cols-4 gap-2">
-                {(["月","火","水","木","金","土","日"] as Day[]).map((d) => (
+                {(["月", "火", "水", "木", "金", "土", "日"] as Day[]).map((d) => (
                   <button
                     key={d}
                     onClick={() => toggleArrayItem("schedule", d)}
@@ -275,7 +329,7 @@ export default function ProfilePage() {
               <p className="text-pink-600 text-xs">※ 後からいつでも変更できます</p>
             </div>
 
-            {/* Duration */}
+            {/* 1回あたりの時間 */}
             <div className="space-y-2">
               <label className="text-pink-700 text-sm">1回あたりの時間</label>
               <div className="flex gap-2">
@@ -301,13 +355,14 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Save */}
+        {/* 保存ボタン */}
         <div className="flex justify-end">
           <Button
             onClick={handleSave}
-            className="bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white px-8 py-3 rounded-xl shadow-lg"
+            disabled={submitting}
+            className="bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white px-8 py-3 rounded-xl shadow-lg disabled:opacity-60"
           >
-            保存する
+            {submitting ? "保存中..." : "保存する"}
           </Button>
         </div>
 
