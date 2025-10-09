@@ -10,10 +10,11 @@ import { db } from "./firebase";
 
 // 型（必要に応じて調整OK）
 export type ProfilePayload = {
+  ageGroup?: string;
   weight?: string;
   height?: string;
   experience?: string;
-  goal?: string;
+  goals?: string[];
   barriers?: string[];
   targetAreas?: string[];
   frequency?: string;
@@ -29,6 +30,8 @@ export async function saveProfile(uid: string, data: ProfilePayload) {
     ref,
     {
       ...data,
+      goals: data.goals ?? [],
+      barriers: data.barriers ?? [],
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(), // 初回は同値、2回目以降は上書きされてもOKならこのままで
     },

@@ -8,7 +8,7 @@ export default function OnboardingPage() {
 
   return (
     <Onboarding
-      onComplete={(data) => {
+      onComplete={(_data) => {
         try {
           const expires = new Date();
           expires.setDate(expires.getDate() + 30);
