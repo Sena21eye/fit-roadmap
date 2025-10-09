@@ -1,6 +1,7 @@
 {
-  "name": "Fit Roadmap",
-  "short_name": "FitRoadmap",
+  "name": "OwnFit",
+  "short_name": "OwnFit",
+  "description": "あなたに合ったプランで、無理なく続くフィットネス。",
   "start_url": "/today",
   "scope": "/",
   "display": "standalone",

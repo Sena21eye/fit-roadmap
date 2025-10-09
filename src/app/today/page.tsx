@@ -44,8 +44,34 @@ export default function TodayPage() {
     // goals は複数選択（日本語ラベルの配列を想定）
     const goals = (Array.isArray(form?.goals) ? form.goals : []) as OnboardingInput["goals"];
 
-    // barriers は配列（例: ["gym","heavy"]）
-    const barriers = (Array.isArray(form?.barriers) ? form.barriers : []) as OnboardingInput["barriers"];
+    // 置き換え後（正規化を追加）
+    const normalizeBarrier = (v: unknown): OnboardingInput["barriers"][number] | null => {
+      if (typeof v !== "string") return null;
+      switch (v) {
+        // すでにトークンのとき
+        case "running":
+        case "heavy":
+        case "gym":
+        case "long":
+          return v;
+        // 旧/日本語ラベルをトークンへ
+        case "no_gym":
+        case "ジムには通っていない":
+          return "gym";
+        case "走りたくない":
+          return "running";
+        case "重いバーベルは使いたくない":
+          return "heavy";
+        case "長時間は続かない":
+          return "long";
+        default:
+          return null;
+      }
+    };
+
+    const barriers = (Array.isArray(form?.barriers) ? form.barriers : [])
+      .map(normalizeBarrier)
+      .filter(Boolean) as OnboardingInput["barriers"];
 
     // duration は "10" | "20-30" | "45+"
     const duration = ((form?.duration as OnboardingInput["duration"]) ?? "20-30") as OnboardingInput["duration"];

@@ -12,9 +12,10 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const noto = Noto_Sans_JP({ subsets: ["latin"], variable: "--font-noto" });
 
 export const metadata: Metadata = {
-  title: "Fit Roadmap",
-  description: "Goal → Roadmap → Today",
-  themeColor: "#ec4899",
+  title: "OwnFit",
+  applicationName: "OwnFit",
+  openGraph: { siteName: "OwnFit", title: "OwnFit" },
+  twitter: { title: "OwnFit" },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
